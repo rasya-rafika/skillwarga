@@ -5,85 +5,88 @@ namespace App\Http\Controllers;
 use App\Models\DaftarJasa;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Log;
 
 class DaftarJasaController extends Controller
 {
     public function index()
     {
-        $kategoris = [
-            'Teknologi',
-            'Rumah Tangga',
-            'Pendidikan',
-            'Kesehatan',
-            'Kecantikan',
-            'Transportasi',
-            'Otomotif',
-            'Makanan',
-            'Olahraga',
-            'Lainnya'
-        ];
-
+        // Log untuk debugging
+        Log::info('DaftarJasaController@index dipanggil');
+        Log::info('User role: ' . (auth()->user()->hasRole('admin') ? 'admin' : (auth()->user()->hasRole('user') ? 'user' : 'unknown')));
+        
         if (auth()->user()->hasRole('admin')) {
-            $jasas = \App\Models\DaftarJasa::latest()->get();
-            return view('daftar_jasa.index', compact('jasas', 'kategoris'));
+            // Admin melihat daftar semua jasa
+            $jasas = DaftarJasa::latest()->get();
+            Log::info('Admin accessing daftar_jasa.index with ' . $jasas->count() . ' items');
+            return view('daftar_jasa.index', compact('jasas'));
         } elseif (auth()->user()->hasRole('user')) {
-            return view('daftar_jasa.index', compact('kategoris'));
+            // User melihat form daftar jasa (atau daftar kosong untuk form)
+            Log::info('User accessing daftar_jasa.index');
+            $jasas = collect(); // Empty collection untuk user
+            return view('daftar_jasa.index', compact('jasas'));
         }
-
+        
+        // Kalau bukan admin atau user, baru redirect ke dashboard
         return redirect()->route('dashboard')->with('error', 'Akses ditolak.');
     }
 
-
-
     /**
-     * Show the form for creating a new resource (tidak digunakan).
+     * Admin index - khusus untuk admin melalui prefix admin
      */
-    public function create()
+    public function adminIndex()
     {
-        return redirect()->route('daftar_jasa.index');
+        Log::info('DaftarJasaController@adminIndex dipanggil');
+        
+        if (!auth()->user()->hasRole('admin')) {
+            return redirect()->route('dashboard')->with('error', 'Akses ditolak.');
+        }
+
+        $jasas = DaftarJasa::latest()->get();
+        Log::info('Admin accessing admin.daftar_jasa.index with ' . $jasas->count() . ' items');
+        return view('daftar_jasa.index', compact('jasas'));
     }
 
     /**
      * Store a newly created resource in storage.
      */
     public function store(Request $request)
-{
-    if (!auth()->user()->hasRole('user')) {
-        return redirect()->route('dashboard')->with('error', 'Akses ditolak.');
+    {
+        Log::info('DaftarJasaController@store dipanggil');
+        
+        // Pastikan hanya user yang dapat mengirim pesan
+        if (!auth()->user()->hasRole('user')) {
+            return redirect()->route('dashboard')->with('error', 'Akses ditolak.');
+        }
+
+        try {
+            $request->validate([
+                'nama_jasa' => 'required|string|max:255',
+                'deskripsi' => 'required|string',
+                'kategori' => 'required|string|max:255',
+                'harga' => 'required|numeric|min:0',
+                'lokasi' => 'required|string|max:255',
+                'kontak' => 'required|string|max:255',
+                'gambar' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
+            ]);
+
+            $data = $request->only(['nama_jasa', 'deskripsi', 'kategori', 'harga', 'lokasi', 'kontak']);
+            $data['user_id'] = auth()->id();
+            
+            if ($request->hasFile('gambar')) {
+                $data['gambar'] = $request->file('gambar')->store('daftar_jasa-gambars', 'public');
+            }
+
+            DaftarJasa::create($data);
+            Log::info('DaftarJasa created successfully');
+
+            return redirect()->route('daftar_jasa.index')
+                             ->with('success', 'Jasa berhasil diajukan!');
+        } catch (\Exception $e) {
+            Log::error('Error in DaftarJasaController@store: ' . $e->getMessage());
+            return redirect()->back()->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
+        }
     }
-
-    $request->validate([
-        'nama_jasa' => 'required|string|max:255',
-        'deskripsi' => 'required|string',
-        'kategori'  => 'required|string|max:255',
-        'lokasi'    => 'required|string|max:255',
-        'harga'     => 'required|numeric|min:0',
-        'kontak'    => 'required|string|max:255',
-        'gambar'    => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
-    ]);
-
-    $data = [
-        'user_id'     => auth()->id(),
-        'nama'        => $request->nama_jasa,
-        'email'       => auth()->user()->email,
-        'telepon'     => $request->kontak,
-        'jenis_jasa'  => $request->kategori,
-        'deskripsi'   => $request->deskripsi,
-        'alamat'      => $request->lokasi,
-        'budget'      => $request->harga,
-    ];
-
-    if ($request->hasFile('gambar')) {
-        $data['foto'] = $request->file('gambar')->store('daftar_jasa-foto', 'public');
-    }
-
-    DaftarJasa::create($data);
-
-    return redirect()->route('daftar_jasa.index')
-                     ->with('success', 'Pengajuan jasa berhasil dikirim!');
-}
-
-
 
     /**
      * Display the specified resource.
@@ -123,30 +126,35 @@ class DaftarJasaController extends Controller
             return redirect()->route('dashboard')->with('error', 'Akses ditolak.');
         }
 
-        $request->validate([
-            'nama_jasa' => 'required|string|max:255',
-            'deskripsi' => 'required|string',
-            'kategori' => 'required|string|max:255',
-            'harga' => 'required|numeric|min:0',
-            'lokasi' => 'required|string|max:255',
-            'kontak' => 'required|string|max:255',
-            'gambar' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
-        ]);
+        try {
+            $request->validate([
+                'nama_jasa' => 'required|string|max:255',
+                'deskripsi' => 'required|string',
+                'kategori' => 'required|string|max:255',
+                'harga' => 'required|numeric|min:0',
+                'lokasi' => 'required|string|max:255',
+                'kontak' => 'required|string|max:255',
+                'gambar' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
+            ]);
 
-        $data = $request->only(['nama_jasa', 'deskripsi', 'kategori', 'harga', 'lokasi', 'kontak']);
-        
-        if ($request->hasFile('gambar')) {
-            // Delete old photo if exists
-            if ($daftar_jasa->gambar) {
-                Storage::disk('public')->delete($daftar_jasa->gambar);
+            $data = $request->only(['nama_jasa', 'deskripsi', 'kategori', 'harga', 'lokasi', 'kontak']);
+            
+            if ($request->hasFile('gambar')) {
+                // Delete old photo if exists
+                if ($daftar_jasa->gambar) {
+                    Storage::disk('public')->delete($daftar_jasa->gambar);
+                }
+                $data['gambar'] = $request->file('gambar')->store('daftar_jasa-gambars', 'public');
             }
-            $data['gambar'] = $request->file('gambar')->store('daftar_jasa-gambars', 'public');
+
+            $daftar_jasa->update($data);
+
+            return redirect()->route('daftar_jasa.index')
+                             ->with('success', 'Jasa berhasil diperbarui!');
+        } catch (\Exception $e) {
+            Log::error('Error in DaftarJasaController@update: ' . $e->getMessage());
+            return redirect()->back()->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
         }
-
-        $daftar_jasa->update($data);
-
-        return redirect()->route('daftar_jasa.index')
-                         ->with('success', 'Jasa berhasil diperbarui!');
     }
 
     /**
@@ -158,15 +166,20 @@ class DaftarJasaController extends Controller
             return redirect()->route('dashboard')->with('error', 'Akses ditolak.');
         }
 
-        // Delete photo if exists
-        if ($daftar_jasa->gambar) {
-            Storage::disk('public')->delete($daftar_jasa->gambar);
+        try {
+            // Delete photo if exists
+            if ($daftar_jasa->gambar) {
+                Storage::disk('public')->delete($daftar_jasa->gambar);
+            }
+
+            $daftar_jasa->delete();
+
+            return redirect()->route('daftar_jasa.index')
+                             ->with('success', 'Jasa berhasil dihapus!');
+        } catch (\Exception $e) {
+            Log::error('Error in DaftarJasaController@destroy: ' . $e->getMessage());
+            return redirect()->back()->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
         }
-
-        $daftar_jasa->delete();
-
-        return redirect()->route('daftar_jasa.index')
-                         ->with('success', 'Jasa berhasil dihapus!');
     }
 
     public function markAsRead(DaftarJasa $daftar_jasa)

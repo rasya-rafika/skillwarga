@@ -21,7 +21,7 @@
                     </x-nav-link>
 
                     <x-nav-link href="{{ url('/Daftar_jasa') }}" :active="request()->is('cari_jasa')">
-                    {{ __('Daftar') }}
+                    {{ __('Daftar Jasa') }}
                     </x-nav-link>
 
                 </div>
