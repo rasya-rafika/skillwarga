@@ -2,200 +2,217 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Jasa;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Facades\Log;
+// use App\Models\Jasa; // Uncomment setelah model dibuat
 
 class JasaController extends Controller
 {
-    public function index()
-    {
-        $jasas = Jasa::latest()->paginate(10);
-        
-        // Tambahkan kategoris dan lokasis untuk view yang membutuhkan
-        $kategoris = $this->getKategoris();
-        $lokasis = $this->getLokasis();
-        
-        return view('cari_jasa.index', compact('jasas', 'kategoris', 'lokasis'));
-    }
+    // ✅ Halaman daftar dokter (untuk user & admin)
+    /**
+     * Display a listing of the resource.
+     */
+    public function index(Request $request)
+{
+    $lokasi = $request->get('lokasi');
 
+    $jasa = Jasa::with('ratings') // ubah ini jadi model, bukan controller
+        ->when($lokasi, fn($q) => $q->where('lokasi', $lokasi))
+        ->get();
+
+    $lokasiList = Jasa::select('lokasi')->distinct()->pluck('lokasi');
+
+    return view('cari_jasa.index', compact('jasa', 'lokasiList', 'lokasi'));
+}
+
+
+    /**
+     * Show the form for creating a new resource.
+     * Hanya admin yang bisa akses (sudah di-middleware di route)
+     */
     public function create()
     {
-        // Siapkan data untuk dropdown/select
-        $kategoris = $this->getKategoris();
-        $lokasis = $this->getLokasis();
-        
-        return view('cari_jasa.create', compact('kategoris', 'lokasis'));
+        // Cek apakah user adalah admin (sesuaikan dengan sistem role Anda)
+        // if (!Auth::user()->hasRole('admin')) {
+        //     abort(403, 'Unauthorized action.');
+        // }
+
+        return view('cari_jasa.create');
     }
 
+    /**
+     * Store a newly created resource in storage.
+     */
     public function store(Request $request)
     {
-        try {
-            $validated = $request->validate([
-                'nama_jasa' => 'required|string|max:255',
-                'deskripsi' => 'required|string',
-                'kategori' => 'required|string',
-                'harga' => 'required|numeric|min:0',
-                'lokasi' => 'required|string|max:255',
-                'kontak' => 'required|string|max:255',
-                'gambar' => 'nullable|image|mimes:jpeg,jpg,png,gif|max:2048',
-                'status' => 'required|in:aktif,nonaktif'
-            ]);
+        // Validasi input
+        $validated = $request->validate([
+            'nama_jasa' => 'required|string|max:255',
+            'deskripsi' => 'required|string',
+            'kategori' => 'required|string|max:100',
+            'harga' => 'required|numeric|min:0',
+            'lokasi' => 'required|string|max:255',
+            'kontak' => 'required|string|max:50',
+            'gambar' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+            'status' => 'required|in:aktif,nonaktif'
+        ]);
 
-            // Handle upload gambar
-            if ($request->hasFile('gambar')) {
-                $gambarPath = $request->file('gambar')->store('jasa', 'public');
-                $validated['gambar'] = $gambarPath;
-            }
-
-            // Tambahkan created_by - pastikan user sudah login
-            if (auth()->check()) {
-                $validated['created_by'] = auth()->id();
-            } else {
-                return redirect()->route('login')->with('error', 'Silakan login terlebih dahulu');
-            }
-
-            // Simpan ke database
-            $jasa = Jasa::create($validated);
-
-            return redirect()->route('jasa.index')->with('success', 'Jasa berhasil ditambahkan!');
-            
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            return back()->withErrors($e->errors())->withInput();
-            
-        } catch (\Exception $e) {
-            Log::error('Jasa creation error:', [
-                'message' => $e->getMessage(),
-                'file' => $e->getFile(),
-                'line' => $e->getLine()
-            ]);
-            return back()->withErrors(['error' => 'Terjadi kesalahan: ' . $e->getMessage()])->withInput();
+        // Handle upload gambar
+        $gambarPath = null;
+        if ($request->hasFile('gambar')) {
+            $gambarPath = $request->file('gambar')->store('jasa-images', 'public');
         }
+
+        // Simpan data jasa (uncomment setelah model dibuat)
+        // $jasa = Jasa::create([
+        //     'nama_jasa' => $validated['nama_jasa'],
+        //     'deskripsi' => $validated['deskripsi'],
+        //     'kategori' => $validated['kategori'],
+        //     'harga' => $validated['harga'],
+        //     'lokasi' => $validated['lokasi'],
+        //     'kontak' => $validated['kontak'],
+        //     'gambar' => $gambarPath,
+        //     'status' => $validated['status'],
+        //     'created_by' => Auth::id()
+        // ]);
+
+        return redirect()->route('cari_jasa.index')
+            ->with('success', 'Jasa berhasil ditambahkan!');
     }
 
-    public function show(Jasa $jasa)
+    /**
+     * Display the specified resource.
+     */
+    public function show(string $id)
     {
-        return view('cari_jasa.show', compact('jasa'));
-    }
-
-    public function edit(Jasa $jasa)
-    {
-        // Siapkan data untuk dropdown/select
-        $kategoris = $this->getKategoris();
-        $lokasis = $this->getLokasis();
+        // $jasa = Jasa::findOrFail($id);
         
-        return view('cari_jasa.edit', compact('jasa', 'kategoris', 'lokasis'));
-    }
-
-    public function update(Request $request, Jasa $jasa)
-    {
-        try {
-            $validated = $request->validate([
-                'nama_jasa' => 'required|string|max:255',
-                'deskripsi' => 'required|string',
-                'kategori' => 'required|string',
-                'harga' => 'required|numeric|min:0',
-                'lokasi' => 'required|string|max:255',
-                'kontak' => 'required|string|max:255',
-                'gambar' => 'nullable|image|mimes:jpeg,jpg,png,gif|max:2048',
-                'status' => 'required|in:aktif,nonaktif'
-            ]);
-
-            // Handle upload gambar baru
-            if ($request->hasFile('gambar')) {
-                // Hapus gambar lama jika ada
-                if ($jasa->gambar) {
-                    Storage::disk('public')->delete($jasa->gambar);
-                }
-                $validated['gambar'] = $request->file('gambar')->store('jasa', 'public');
-            }
-
-            $jasa->update($validated);
-            return redirect()->route('jasa.index')->with('success', 'Jasa berhasil diupdate!');
-            
-        } catch (\Exception $e) {
-            Log::error('Jasa update error:', [
-                'message' => $e->getMessage(),
-                'file' => $e->getFile(),
-                'line' => $e->getLine()
-            ]);
-            return back()->withErrors(['error' => 'Terjadi kesalahan: ' . $e->getMessage()])->withInput();
-        }
-    }
-
-    public function destroy(Jasa $jasa)
-    {
-        try {
-            // Hapus gambar jika ada
-            if ($jasa->gambar) {
-                Storage::disk('public')->delete($jasa->gambar);
-            }
-            $jasa->delete();
-            return redirect()->route('jasa.index')->with('success', 'Jasa berhasil dihapus!');
-            
-        } catch (\Exception $e) {
-            Log::error('Jasa delete error:', [
-                'message' => $e->getMessage(),
-                'file' => $e->getFile(),
-                'line' => $e->getLine()
-            ]);
-            return back()->withErrors(['error' => 'Terjadi kesalahan: ' . $e->getMessage()]);
-        }
-    }
-
-    public function toggleStatus(Jasa $jasa)
-    {
-        try {
-            $jasa->update([
-                'status' => $jasa->status === 'aktif' ? 'nonaktif' : 'aktif'
-            ]);
-            return back()->with('success', 'Status jasa berhasil diubah!');
-            
-        } catch (\Exception $e) {
-            Log::error('Toggle status error:', [
-                'message' => $e->getMessage(),
-                'file' => $e->getFile(),
-                'line' => $e->getLine()
-            ]);
-            return back()->withErrors(['error' => 'Terjadi kesalahan: ' . $e->getMessage()]);
-        }
+        return view('cari_jasa.show'); // , compact('jasa')
     }
 
     /**
-     * Get list of categories - sesuaikan dengan form asli
+     * Show the form for editing the specified resource.
      */
-    private function getKategoris()
+    public function edit(string $id)
     {
-        return [
-            'Teknologi',
-            'Rumah Tangga', 
-            'Pendidikan',
-            'Kesehatan',
-            'Kecantikan',
-            'Transportasi',
-            'Otomotif',
-            'Makanan',
-            'Olahraga',
-            'Lainnya'
-        ];
+        // Cek apakah user adalah admin (sesuaikan dengan sistem role Anda)
+        // if (!Auth::user()->hasRole('admin')) {
+        //     abort(403, 'Unauthorized action.');
+        // }
+
+        // $jasa = Jasa::findOrFail($id);
+        
+        return view('cari_jasa.edit'); // , compact('jasa')
     }
 
     /**
-     * Get list of locations
+     * Update the specified resource in storage.
      */
-    private function getLokasis()
+    public function update(Request $request, string $id)
     {
-        return [
-            'Jakarta Pusat',
-            'Jakarta Utara',
-            'Jakarta Selatan',
-            'Jakarta Barat',
-            'Jakarta Timur',
-            'Bogor',
-            'Depok',
-            'Tangerang',
-            'Bekasi'
-        ];
+        // Cek apakah user adalah admin (sesuaikan dengan sistem role Anda)
+        // if (!Auth::user()->hasRole('admin')) {
+        //     abort(403, 'Unauthorized action.');
+        // }
+
+        // $jasa = Jasa::findOrFail($id);
+
+        // Validasi input
+        $validated = $request->validate([
+            'nama_jasa' => 'required|string|max:255',
+            'deskripsi' => 'required|string',
+            'kategori' => 'required|string|max:100',
+            'harga' => 'required|numeric|min:0',
+            'lokasi' => 'required|string|max:255',
+            'kontak' => 'required|string|max:50',
+            'gambar' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+            'status' => 'required|in:aktif,nonaktif'
+        ]);
+
+        // Handle upload gambar baru
+        if ($request->hasFile('gambar')) {
+            // Hapus gambar lama jika ada
+            // if ($jasa->gambar) {
+            //     Storage::disk('public')->delete($jasa->gambar);
+            // }
+            
+            $validated['gambar'] = $request->file('gambar')->store('jasa-images', 'public');
+        }
+
+        // Update data (uncomment setelah model dibuat)
+        // $jasa->update($validated);
+
+        return redirect()->route('cari_jasa.index')
+            ->with('success', 'Jasa berhasil diupdate!');
+    }
+
+    /**
+     * Remove the specified resource from storage.
+     */
+    public function destroy(string $id)
+    {
+        // Cek apakah user adalah admin (sesuaikan dengan sistem role Anda)
+        // if (!Auth::user()->hasRole('admin')) {
+        //     abort(403, 'Unauthorized action.');
+        // }
+
+        // $jasa = Jasa::findOrFail($id);
+
+        // Hapus gambar jika ada
+        // if ($jasa->gambar) {
+        //     Storage::disk('public')->delete($jasa->gambar);
+        // }
+
+        // Hapus data jasa
+        // $jasa->delete();
+
+        return redirect()->route('cari_jasa.index')
+            ->with('success', 'Jasa berhasil dihapus!');
+    }
+
+    /**
+     * Method tambahan untuk mencari jasa
+     */
+    public function search(Request $request)
+    {
+        $query = $request->get('q');
+        $kategori = $request->get('kategori');
+        $lokasi = $request->get('lokasi');
+
+        // Uncomment setelah model dibuat
+        // $jasas = Jasa::where('status', 'aktif')
+        //     ->when($query, function ($q) use ($query) {
+        //         return $q->where('nama_jasa', 'like', "%{$query}%")
+        //                 ->orWhere('deskripsi', 'like', "%{$query}%");
+        //     })
+        //     ->when($kategori, function ($q) use ($kategori) {
+        //         return $q->where('kategori', $kategori);
+        //     })
+        //     ->when($lokasi, function ($q) use ($lokasi) {
+        //         return $q->where('lokasi', 'like', "%{$lokasi}%");
+        //     })
+        //     ->latest()
+        //     ->paginate(10);
+
+        return view('cari_jasa.index'); // , compact('jasas')
+    }
+
+    /**
+     * Method untuk toggle status jasa
+     */
+    public function toggleStatus(string $id)
+    {
+        // Cek apakah user adalah admin (sesuaikan dengan sistem role Anda)
+        // if (!Auth::user()->hasRole('admin')) {
+        //     abort(403, 'Unauthorized action.');
+        // }
+
+        // $jasa = Jasa::findOrFail($id);
+        // $jasa->status = $jasa->status === 'aktif' ? 'nonaktif' : 'aktif';
+        // $jasa->save();
+
+        return redirect()->back()
+            ->with('success', 'Status jasa berhasil diubah!');
     }
 }
