@@ -16,13 +16,23 @@
         <div class="max-w-6xl mx-auto sm:px-6 lg:px-8 space-y-8">
             
             <!-- 🎉 Welcome Section -->
+        
+            <div class="flex justify-center">
+                <img src="{{ asset('images/logo_skillwarga.png') }}" alt="Logo SkillWarga" class="h-40 w-auto mb-4">
+            </div>
+
+            <!-- 🎉 Welcome Box -->
             <div class="bg-gradient-to-r from-pink-400 to-purple-500 text-white p-8 rounded-2xl shadow-lg">
-                <h2 class="text-3xl font-bold mb-2">Halo, {{ Auth::user()->name ?? 'Admin' }}! 👋</h2>
-                <p class="text-purple-100 text-sm">Selamat datang di <strong>Skill Warga</strong> — platform digital untuk menemukan dan menawarkan jasa dari warga sekitar.</p>
+                <h2 class="text-3xl font-bold mb-2">Halo, {{ Auth::user()->name ?? 'User' }}! 👋</h2>
+                <p class="text-purple-100 text-sm">
+                    Selamat datang di <strong>Skill Warga</strong> — platform digital untuk menemukan dan menawarkan jasa dari warga sekitar.
+                </p>
                 <div class="mt-4 flex space-x-4 text-sm">
                     <span><i class="fas fa-circle text-green-400 mr-1 text-xs"></i> Status: Aktif</span>
                 </div>
             </div>
+
+
 
             <!-- ℹ️ Tentang Skill Warga -->
             <div class="bg-white border border-gray-200 p-6 rounded-xl shadow-sm">
