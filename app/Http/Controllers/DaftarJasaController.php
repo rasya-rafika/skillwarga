@@ -9,22 +9,54 @@ use Illuminate\Support\Facades\Log;
 
 class DaftarJasaController extends Controller
 {
+    /**
+     * Get available categories for services
+     */
+    private function getKategoris()
+    {
+        return [
+            'Teknologi',
+            'Desain',
+            'Penulisan',
+            'Pemasaran',
+            'Konsultasi',
+            'Pendidikan',
+            'Kesehatan',
+            'Keuangan',
+            'Hukum',
+            'Konstruksi',
+            'Otomotif',
+            'Kebersihan',
+            'Catering',
+            'Fotografi',
+            'Musik',
+            'Olahraga',
+            'Kecantikan',
+            'Perbaikan',
+            'Logistik',
+            'Lainnya'
+        ];
+    }
+
     public function index()
     {
         // Log untuk debugging
         Log::info('DaftarJasaController@index dipanggil');
         Log::info('User role: ' . (auth()->user()->hasRole('admin') ? 'admin' : (auth()->user()->hasRole('user') ? 'user' : 'unknown')));
         
+        // Get categories for the form
+        $kategoris = $this->getKategoris();
+        
         if (auth()->user()->hasRole('admin')) {
             // Admin melihat daftar semua jasa
             $jasas = DaftarJasa::latest()->get();
             Log::info('Admin accessing daftar_jasa.index with ' . $jasas->count() . ' items');
-            return view('daftar_jasa.index', compact('jasas'));
+            return view('daftar_jasa.index', compact('jasas', 'kategoris'));
         } elseif (auth()->user()->hasRole('user')) {
             // User melihat form daftar jasa (atau daftar kosong untuk form)
             Log::info('User accessing daftar_jasa.index');
             $jasas = collect(); // Empty collection untuk user
-            return view('daftar_jasa.index', compact('jasas'));
+            return view('daftar_jasa.index', compact('jasas', 'kategoris'));
         }
         
         // Kalau bukan admin atau user, baru redirect ke dashboard
@@ -43,8 +75,9 @@ class DaftarJasaController extends Controller
         }
 
         $jasas = DaftarJasa::latest()->get();
+        $kategoris = $this->getKategoris();
         Log::info('Admin accessing admin.daftar_jasa.index with ' . $jasas->count() . ' items');
-        return view('daftar_jasa.index', compact('jasas'));
+        return view('daftar_jasa.index', compact('jasas', 'kategoris'));
     }
 
     /**
@@ -63,7 +96,7 @@ class DaftarJasaController extends Controller
             $request->validate([
                 'nama_jasa' => 'required|string|max:255',
                 'deskripsi' => 'required|string',
-                'kategori' => 'required|string|max:255',
+                'kategori' => 'required|string|max:255|in:' . implode(',', $this->getKategoris()),
                 'harga' => 'required|numeric|min:0',
                 'lokasi' => 'required|string|max:255',
                 'kontak' => 'required|string|max:255',
@@ -114,7 +147,8 @@ class DaftarJasaController extends Controller
             return redirect()->route('dashboard')->with('error', 'Akses ditolak.');
         }
 
-        return view('daftar_jasa.edit', compact('daftar_jasa'));
+        $kategoris = $this->getKategoris();
+        return view('daftar_jasa.edit', compact('daftar_jasa', 'kategoris'));
     }
 
     /**
@@ -130,7 +164,7 @@ class DaftarJasaController extends Controller
             $request->validate([
                 'nama_jasa' => 'required|string|max:255',
                 'deskripsi' => 'required|string',
-                'kategori' => 'required|string|max:255',
+                'kategori' => 'required|string|max:255|in:' . implode(',', $this->getKategoris()),
                 'harga' => 'required|numeric|min:0',
                 'lokasi' => 'required|string|max:255',
                 'kontak' => 'required|string|max:255',
